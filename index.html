@@ -791,8 +791,9 @@ function renderAll() {
   document.getElementById('upcomingBadge').textContent = getUpcomingTasks().length;
 }
 function renderStats() {
-  // 今日进展
-  const today = getAllTodayTasks();
+  // 今日进展：deadline 严格等于今天的任务
+  const tk = todayKey();
+  const today = tasks.filter(t => t.deadline === tk);
   const totalT = today.length, doneT = today.filter(t=>t.done).length, pendingT = totalT-doneT, rateT = totalT>0?Math.round(doneT/totalT*100):0;
   document.getElementById('statTodayTotal').textContent=totalT; document.getElementById('statTodayDone').textContent=doneT;
   document.getElementById('statTodayPending').textContent=pendingT; document.getElementById('statTodayRate').textContent=rateT+'%';
