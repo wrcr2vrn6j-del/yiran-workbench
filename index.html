@@ -82,7 +82,9 @@ body{
 .timeline-item .tl-note{flex:1;color:var(--text);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* Stats */
-.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}
+.stats-group{margin-bottom:12px}
+.stats-title{font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:4px;padding-left:2px}
 .stat-cell{background:var(--card-bg);border-radius:var(--radius);padding:12px 10px;box-shadow:var(--shadow);text-align:center;display:flex;flex-direction:column;gap:2px}
 .stat-cell .val{font-size:22px;font-weight:700;letter-spacing:-.5px}
 .stat-cell .lbl{font-size:11px;color:var(--text-secondary)}
@@ -296,15 +298,31 @@ body{
       </div>
 
       <!-- Stats + Progress (today only) -->
-      <div class="stats-row">
-        <div class="stat-cell s-total"><span class="val" id="statTotal">0</span><span class="lbl">全部</span></div>
-        <div class="stat-cell s-done"><span class="val" id="statDone">0</span><span class="lbl">已完成</span></div>
-        <div class="stat-cell s-pending"><span class="val" id="statPending">0</span><span class="lbl">进行中</span></div>
-        <div class="stat-cell s-rate"><span class="val" id="statRate">0%</span><span class="lbl">完成率</span></div>
+      <div class="stats-group">
+        <div class="stats-title">今日进展</div>
+        <div class="stats-row">
+          <div class="stat-cell s-total"><span class="val" id="statTodayTotal">0</span><span class="lbl">全部</span></div>
+          <div class="stat-cell s-done"><span class="val" id="statTodayDone">0</span><span class="lbl">已完成</span></div>
+          <div class="stat-cell s-pending"><span class="val" id="statTodayPending">0</span><span class="lbl">进行中</span></div>
+          <div class="stat-cell s-rate"><span class="val" id="statTodayRate">0%</span><span class="lbl">完成率</span></div>
+        </div>
+        <div class="progress-wrap">
+          <div class="prog-hdr"><span>今日进度</span><span id="progressTextToday">0/0</span></div>
+          <div class="prog-track"><div class="prog-fill" id="progressFillToday" style="width:0%"></div></div>
+        </div>
       </div>
-      <div class="progress-wrap">
-        <div class="prog-hdr"><span>今日进度</span><span id="progressText">0/0</span></div>
-        <div class="prog-track"><div class="prog-fill" id="progressFill" style="width:0%"></div></div>
+      <div class="stats-group">
+        <div class="stats-title">全部任务</div>
+        <div class="stats-row">
+          <div class="stat-cell s-total"><span class="val" id="statTotal">0</span><span class="lbl">全部</span></div>
+          <div class="stat-cell s-done"><span class="val" id="statDone">0</span><span class="lbl">已完成</span></div>
+          <div class="stat-cell s-pending"><span class="val" id="statPending">0</span><span class="lbl">进行中</span></div>
+          <div class="stat-cell s-rate"><span class="val" id="statRate">0%</span><span class="lbl">完成率</span></div>
+        </div>
+        <div class="progress-wrap">
+          <div class="prog-hdr"><span>总进度</span><span id="progressTextAll">0/0</span></div>
+          <div class="prog-track"><div class="prog-fill" id="progressFillAll" style="width:0%"></div></div>
+        </div>
       </div>
     </div>
 
@@ -780,12 +798,20 @@ function renderAll() {
   document.getElementById('upcomingBadge').textContent = getUpcomingTasks().length;
 }
 function renderStats() {
+  // 今日进展
   const today = getAllTodayTasks();
-  const total = today.length, done = today.filter(t=>t.done).length, pending = total-done, rate = total>0?Math.round(done/total*100):0;
-  document.getElementById('statTotal').textContent=total; document.getElementById('statDone').textContent=done;
-  document.getElementById('statPending').textContent=pending; document.getElementById('statRate').textContent=rate+'%';
-  document.getElementById('progressText').textContent=`${done}/${total}`;
-  document.getElementById('progressFill').style.width=rate+'%';
+  const totalT = today.length, doneT = today.filter(t=>t.done).length, pendingT = totalT-doneT, rateT = totalT>0?Math.round(doneT/totalT*100):0;
+  document.getElementById('statTodayTotal').textContent=totalT; document.getElementById('statTodayDone').textContent=doneT;
+  document.getElementById('statTodayPending').textContent=pendingT; document.getElementById('statTodayRate').textContent=rateT+'%';
+  document.getElementById('progressTextToday').textContent=`${doneT}/${totalT}`;
+  document.getElementById('progressFillToday').style.width=rateT+'%';
+  // 全部任务进展
+  const all = tasks;
+  const totalA = all.length, doneA = all.filter(t=>t.done).length, pendingA = totalA-doneA, rateA = totalA>0?Math.round(doneA/totalA*100):0;
+  document.getElementById('statTotal').textContent=totalA; document.getElementById('statDone').textContent=doneA;
+  document.getElementById('statPending').textContent=pendingA; document.getElementById('statRate').textContent=rateA+'%';
+  document.getElementById('progressTextAll').textContent=`${doneA}/${totalA}`;
+  document.getElementById('progressFillAll').style.width=rateA+'%';
 }
 function updateCounts() {
   const today = getAllTodayTasks();
@@ -842,6 +868,12 @@ function resolveOverdue(id, action) {
 // Sort by deadline urgency (ascending), same day by creation time
 function sortByUrgency(taskList) {
   return [...taskList].sort((a, b) => {
+    // 已完成筛选：按完成时间倒序，最新完成的在最前
+    if (currentFilter === 'done' && a.done && b.done) {
+      const da = a.doneAt ? new Date(a.doneAt).getTime() : 0;
+      const db = b.doneAt ? new Date(b.doneAt).getTime() : 0;
+      return db - da;
+    }
     const dlA = a.deadline ? new Date(a.deadline + 'T00:00:00').getTime() : Infinity;
     const dlB = b.deadline ? new Date(b.deadline + 'T00:00:00').getTime() : Infinity;
     if (dlA !== dlB) return dlA - dlB;
