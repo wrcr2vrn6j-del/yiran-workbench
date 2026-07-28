@@ -658,7 +658,7 @@ function toggleTask(id) {
       row.style.marginBottom = '0';
       row.style.paddingTop = '0';
       row.style.paddingBottom = '0';
-      setTimeout(() => { renderAll(); showToast('✅ 任务已完成'); }, 350);
+      setTimeout(() => { renderAll(); showToast('✅ 任务已完成'); celebrate(); }, 350);
       return;
     }
   } else {
@@ -992,6 +992,31 @@ function setupListeners() {
 }
 
 init();
+function celebrate() {
+  const emojis = ['🎉','✨','🌟','💫','🎊','🥳','👏','💪','🔥','⭐','🎯','🏆'];
+  const container = document.body;
+  for (let i = 0; i < 20; i++) {
+    setTimeout(() => {
+      const particle = document.createElement('div');
+      particle.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+      particle.style.cssText = `
+        position:fixed;z-index:9999;pointer-events:none;
+        font-size:${18 + Math.random() * 20}px;
+        left:${10 + Math.random() * 80}%;
+        top:${30 + Math.random() * 40}%;
+        opacity:1;
+        transition:all ${0.8 + Math.random() * 0.6}s ease-out;
+      `;
+      container.appendChild(particle);
+      requestAnimationFrame(() => {
+        particle.style.opacity = '0';
+        particle.style.transform = `translate(${(Math.random()-0.5)*120}px, ${-60-Math.random()*120}px) rotate(${(Math.random()-0.5)*360}deg)`;
+      });
+      setTimeout(() => particle.remove(), 1500);
+    }, i * 30);
+  }
+}
+
 </script>
 </body>
 </html>
