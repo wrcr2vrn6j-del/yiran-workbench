@@ -451,8 +451,8 @@ function loadAll() {
   } catch { moodEntries = []; }
 }
 function migrateMood(o) { const m = { great:'excited', good:'happy', okay:'calm', bad:'sad', terrible:'angry' }; return m[o] || o; }
-function saveTasks() { localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)); }
-function saveMoods() { localStorage.setItem(MOOD_KEY, JSON.stringify(moodEntries)); }
+function saveTasks() { localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)); autoBackup(); }
+function saveMoods() { localStorage.setItem(MOOD_KEY, JSON.stringify(moodEntries)); autoBackup(); }
 function updateDate() {
   const now = new Date();
   document.getElementById('currentDate').textContent = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 星期${['日','一','二','三','四','五','六'][now.getDay()]}`;
@@ -1046,6 +1046,83 @@ function celebrate() {
     }, i * 30);
   }
 }
+
+// === 自动云备份 ===
+const BACKUP_KEY = 'yiran_cloud_last_backup';
+const BACKUP_URL = 'https://raw.githubusercontent.com/wrcr2vrn6j-del/yiran-workbench/main/backup.json';
+let _backupTimer = null;
+
+// 从 GitHub 拉取云端备份（公开仓库，无需 token）
+async function pullCloudBackup() {
+  try {
+    const resp = await fetch(BACKUP_URL + '?t=' + Date.now());
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch { return null; }
+}
+
+// 自动备份：导出 JSON 下载文件（备用）
+function autoBackup() {
+  clearTimeout(_backupTimer);
+  _backupTimer = setTimeout(() => {
+    const data = { tasks, moodEntries, exportedAt: new Date().toISOString(), version: 2 };
+    localStorage.setItem(BACKUP_KEY, JSON.stringify(data));
+  }, 2000);
+}
+
+// 页面加载时恢复
+async function initCloudSync() {
+  // 本地已有数据，直接用
+  if (localStorage.getItem(STORAGE_KEY) || localStorage.getItem(MOOD_KEY)) {
+    autoBackup();
+    return;
+  }
+  // 本地无数据，尝试从本地备份恢复
+  const localBak = localStorage.getItem(BACKUP_KEY);
+  if (localBak) {
+    try {
+      const d = JSON.parse(localBak);
+      if (d.tasks) { tasks = d.tasks; moodEntries = d.moodEntries || []; saveTasks(); saveMoods(); renderAll(); showToast('📦 已恢复本地备份'); return; }
+    } catch {}
+  }
+  // 尝试从云端恢复
+  const cloud = await pullCloudBackup();
+  if (cloud && cloud.tasks && cloud.tasks.length > 0) {
+    tasks = cloud.tasks;
+    moodEntries = cloud.moodEntries || [];
+    saveTasks(); saveMoods();
+    renderAll();
+    showToast('☁️ 已从云端恢复数据');
+  }
+}
+
+// 手动备份到云端（需要 token，通过手动操作）
+async function manualCloudBackup(token) {
+  const data = { tasks, moodEntries, exportedAt: new Date().toISOString(), version: 2 };
+  try {
+    // 先获取当前文件的 sha
+    const infoResp = await fetch(`https://api.github.com/repos/wrcr2vrn6j-del/yiran-workbench/contents/backup.json`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.v3+json' }
+    });
+    const body = {
+      message: `备份 ${new Date().toLocaleString('zh-CN')}`,
+      content: btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))))
+    };
+    if (infoResp.ok) {
+      const info = await infoResp.json();
+      body.sha = info.sha;
+    }
+    await fetch(`https://api.github.com/repos/wrcr2vrn6j-del/yiran-workbench/contents/backup.json`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.v3+json' },
+      body: JSON.stringify(body)
+    });
+    showToast('☁️ 云端备份成功');
+  } catch(e) { showToast('❌ 备份失败'); }
+}
+
+// 启动云端同步
+initCloudSync();
 
 </script>
 </body>
