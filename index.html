@@ -78,6 +78,7 @@ body{
 .timeline-item{display:flex;align-items:center;gap:8px;font-size:13px}
 .timeline-item .tl-emoji{font-size:20px;flex-shrink:0}
 .timeline-item .tl-time{font-size:11px;color:var(--text-secondary);flex-shrink:0;min-width:40px}
+.timeline-item .tl-date{font-size:10px;color:var(--accent);flex-shrink:0;min-width:32px}
 .timeline-item .tl-note{flex:1;color:var(--text);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* Stats */
@@ -285,6 +286,7 @@ body{
           <button class="mood-btn" data-mood="nervous" onclick="selectMood('nervous')"><span class="mood-emoji">😰</span><span class="mood-label">紧张</span></button>
           <button class="mood-btn" data-mood="angry" onclick="selectMood('angry')"><span class="mood-emoji">😠</span><span class="mood-label">愤怒</span></button>
           <button class="mood-btn" data-mood="sad" onclick="selectMood('sad')"><span class="mood-emoji">😢</span><span class="mood-label">难过</span></button>
+          <button class="mood-btn" data-mood="shocked" onclick="selectMood('shocked')"><span class="mood-emoji">😱</span><span class="mood-label">震惊</span></button>
         </div>
         <div class="mood-note-row hidden" id="moodNoteRow">
           <input type="text" class="mood-note-input" id="moodNoteInput" placeholder="写一句此刻的感受..." maxlength="60">
@@ -485,6 +487,7 @@ function switchView(v) {
 const moodMeta = {
   excited:{emoji:'🤩',label:'兴奋'}, happy:{emoji:'😊',label:'开心'}, calm:{emoji:'😌',label:'平静'},
   nervous:{emoji:'😰',label:'紧张'}, angry:{emoji:'😠',label:'愤怒'}, sad:{emoji:'😢',label:'难过'},
+  shocked:{emoji:'😱',label:'震惊'},
 };
 function getTodayMoodEntries() {
   const tk = todayKey();
@@ -533,12 +536,34 @@ function renderMood() {
 function renderTimeline() {
   const c = document.getElementById('moodTimeline');
   const today = getTodayMoodEntries();
-  if (today.length === 0) { c.classList.add('hidden'); return; }
+  // 今天不主动显示，但显示"查看历史"按钮
+  if (moodEntries.length === 0) { c.classList.add('hidden'); return; }
   c.classList.remove('hidden');
-  c.innerHTML = `<h4>📋 今日心情记录</h4><div class="timeline-list">${today.map(e => {
-    const t = new Date(e.ts); const ts = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
-    return `<div class="timeline-item"><span class="tl-time">${ts}</span><span class="tl-emoji">${moodMeta[e.mood].emoji}</span><span class="tl-note" title="${esc(e.note||'')}">${esc(e.note||moodMeta[e.mood].label)}</span><button class="btn-rm" onclick="deleteMoodEntry(${e.ts})" style="font-size:13px;padding:2px">✕</button></div>`;
+  // 只显示今天的，或点击"查看全部"后展开
+  const showAll = c.dataset.showAll === '1';
+  const entries = showAll ? moodEntries : today;
+  if (entries.length === 0 && !showAll) {
+    c.innerHTML = `<div style="font-size:11px;color:var(--text-secondary);cursor:pointer" onclick="toggleMoodHistory()">📋 查看历史心情记录 (${moodEntries.length}条) ▸</div>`;
+    return;
+  }
+  const title = showAll ? '📋 全部心情记录' : '📋 今日心情记录';
+  const toggleBtn = showAll
+    ? `<span style="font-size:10px;color:var(--text-secondary);cursor:pointer" onclick="toggleMoodHistory()">收起 ▾</span>`
+    : (moodEntries.length > today.length
+      ? `<span style="font-size:10px;color:var(--text-secondary);cursor:pointer" onclick="toggleMoodHistory()">查看全部(${moodEntries.length}条) ▸</span>`
+      : '');
+  c.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><h4>${title}</h4>${toggleBtn}</div><div class="timeline-list">${entries.map(e => {
+    const t = new Date(e.ts);
+    const dk = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+    const ts = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
+    const dateLabel = showAll ? `<span class="tl-date">${t.getMonth()+1}/${t.getDate()}</span>` : '';
+    return `<div class="timeline-item"><span class="tl-time">${ts}</span>${dateLabel}<span class="tl-emoji">${moodMeta[e.mood].emoji}</span><span class="tl-note" title="${esc(e.note||'')}">${esc(e.note||moodMeta[e.mood].label)}</span><button class="btn-rm" onclick="deleteMoodEntry(${e.ts})" style="font-size:13px;padding:2px">✕</button></div>`;
   }).join('')}</div>`;
+}
+function toggleMoodHistory() {
+  const c = document.getElementById('moodTimeline');
+  c.dataset.showAll = c.dataset.showAll === '1' ? '0' : '1';
+  renderTimeline();
 }
 function deleteMoodEntry(ts) { moodEntries = moodEntries.filter(e => e.ts !== ts); saveMoods(); renderMood(); showToast('🗑 已删除'); }
 
@@ -883,17 +908,19 @@ function createTaskEl(task, idx, isFuture) {
   // Deadline 标签和进度条
   let deadlineHtml = '';
   if (task.deadline) {
-    const dlDays = getDeadlineDaysLeft(task.deadline);
     const dlClass = getDeadlineClass(task.deadline);
-    if (!isFuture && dlDays !== '今日截止' && !dlDays.startsWith('已超')) {
+    if (task.done) {
+      // 已完成任务：只显示日期，不显示超期
+      deadlineHtml = `<span class="tag tag-deadline dl-green">⏰ ${formatDeadline(task.deadline)}</span>`;
+    } else if (!isFuture && getDeadlineDaysLeft(task.deadline) !== '今日截止' && !getDeadlineDaysLeft(task.deadline).startsWith('已超')) {
       // 今日清单中，deadline 在未来 → 显示进度条
       const pct = getDeadlineProgress(task);
       deadlineHtml = `<div class="deadline-progress-wrap">
-        <span class="tag tag-deadline ${dlClass}">⏰ ${formatDeadline(task.deadline)} ${dlDays}</span>
+        <span class="tag tag-deadline ${dlClass}">⏰ ${formatDeadline(task.deadline)} ${getDeadlineDaysLeft(task.deadline)}</span>
         <div class="deadline-progress-bar"><div class="deadline-progress-fill" style="width:${pct}%"></div></div>
       </div>`;
     } else {
-      deadlineHtml = `<span class="tag tag-deadline ${dlClass}">⏰ ${formatDeadline(task.deadline)} ${dlDays}</span>`;
+      deadlineHtml = `<span class="tag tag-deadline ${dlClass}">⏰ ${formatDeadline(task.deadline)} ${getDeadlineDaysLeft(task.deadline)}</span>`;
     }
   }
 
