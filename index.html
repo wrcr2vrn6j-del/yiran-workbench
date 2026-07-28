@@ -308,15 +308,6 @@ body{
           <div class="stat-cell s-rate"><span class="val" id="statTodayRate">0%</span><span class="lbl">完成率</span></div>
         </div>
       </div>
-      <div class="stats-group" id="statsAll">
-        <div class="stats-title">📊 全部任务 <span id="progressTextAll" style="font-weight:400;font-size:11px;color:var(--accent)">0/0</span></div>
-        <div class="stats-row">
-          <div class="stat-cell s-total"><span class="val" id="statTotal">0</span><span class="lbl">全部</span></div>
-          <div class="stat-cell s-done"><span class="val" id="statDone">0</span><span class="lbl">已完成</span></div>
-          <div class="stat-cell s-pending"><span class="val" id="statPending">0</span><span class="lbl">进行中</span></div>
-          <div class="stat-cell s-rate"><span class="val" id="statRate">0%</span><span class="lbl">完成率</span></div>
-        </div>
-      </div>
     </div>
 
     <!-- Add Task -->
@@ -352,6 +343,17 @@ body{
         <button class="filter-pill" data-filter="all">全部<span class="cnt" id="cntAll">0</span></button>
         <button class="filter-pill on" data-filter="pending">进行中<span class="cnt" id="cntPending">0</span></button>
         <button class="filter-pill" data-filter="done">已完成<span class="cnt" id="cntDone">0</span></button>
+      </div>
+    </div>
+
+    <!-- 全部任务统计 -->
+    <div class="stats-group" id="statsAll" style="margin:0 14px 8px;display:none">
+      <div class="stats-title">📊 全部任务 <span id="progressTextAll" style="font-weight:400;font-size:11px;color:var(--accent)">0/0</span></div>
+      <div class="stats-row">
+        <div class="stat-cell s-total"><span class="val" id="statTotal">0</span><span class="lbl">全部</span></div>
+        <div class="stat-cell s-done"><span class="val" id="statDone">0</span><span class="lbl">已完成</span></div>
+        <div class="stat-cell s-pending"><span class="val" id="statPending">0</span><span class="lbl">进行中</span></div>
+        <div class="stat-cell s-rate"><span class="val" id="statRate">0%</span><span class="lbl">完成率</span></div>
       </div>
     </div>
 
@@ -481,14 +483,17 @@ function switchView(v) {
   const filterSec = document.getElementById('filterSection');
   const dateWrap = document.getElementById('datePickerWrap');
   const deadlineWrap = document.getElementById('deadlineInput');
+  const statsAll = document.getElementById('statsAll');
   if (v === 'today') {
     moodSec.style.display = ''; filterSec.style.display = '';
     dateWrap.style.display = 'none';
     deadlineWrap.style.display = '';
+    statsAll.style.display = 'none';
   } else {
     moodSec.style.display = 'none'; filterSec.style.display = 'none';
     dateWrap.style.display = '';
     deadlineWrap.style.display = 'none';
+    statsAll.style.display = '';
     setupDateInput();
   }
   renderAll();
@@ -782,8 +787,9 @@ function setFilter(f) { currentFilter=f; document.querySelectorAll('.filter-pill
 
 // Render
 function renderAll() {
+  renderStats();
   if (currentView === 'today') {
-    renderMood(); renderStats(); renderTodayList(); updateCounts(); renderOverdue();
+    renderMood(); renderTodayList(); updateCounts(); renderOverdue();
   } else {
     renderUpcomingList(); renderOverdue();
   }
