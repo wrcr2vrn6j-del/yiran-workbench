@@ -1009,7 +1009,7 @@ function setupListeners() {
   document.addEventListener('keydown', e => { if ((e.ctrlKey||e.metaKey)&&e.key==='k') { e.preventDefault(); document.getElementById('taskInput').focus(); } });
   document.getElementById('moodNoteInput').addEventListener('keydown', e => { if (e.key==='Enter') { e.preventDefault(); saveMoodRecord(); } });
   // 点击心情卡片外部取消心情选中
-  document.addEventListener('click', e => {
+  document.getElementById('appContent').addEventListener('click', e => {
     if (pendingMood && !e.target.closest('#moodCard')) {
       cancelMood();
     }
