@@ -1121,8 +1121,8 @@ async function manualCloudBackup(token) {
   } catch(e) { showToast('❌ 备份失败'); }
 }
 
-// 启动云端同步
-initCloudSync();
+// 启动云端同步（包装以确保错误不影响主流程）
+setTimeout(() => { initCloudSync().catch(() => {}); }, 100);
 
 </script>
 </body>
