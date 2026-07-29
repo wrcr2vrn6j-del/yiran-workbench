@@ -426,6 +426,7 @@ function dismissInstall() { document.getElementById('installBanner').classList.r
 function init() {
   loadAll(); updateDate(); renderAll(); setupListeners();
   document.getElementById('deadlineInput').value = todayKey();
+  document.getElementById('currentDate').textContent += ' ✓';
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 function loadAll() {
