@@ -75,6 +75,7 @@ body{
 .btn-mood-save{padding:8px 14px;background:var(--primary);color:#fff;border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
 .btn-mood-save:active{background:var(--primary-dark);transform:scale(.96)}
 .btn-mood-save:disabled{opacity:.4;pointer-events:none}
+.btn-mood-save.has-audio{background:linear-gradient(135deg,var(--primary),var(--accent));box-shadow:0 0 8px rgba(82,183,136,.4)}
 .mood-timeline{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border)}
 .mood-timeline.hidden{display:none}
 .mood-timeline h4{font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:8px}
@@ -537,19 +538,27 @@ function selectMood(moodKey) {
 function saveMoodRecord() {
   if (!pendingMood) return;
   const note = document.getElementById('moodNoteInput').value.trim();
-  const entry = { mood: pendingMood, note, ts: Date.now() };
-  // 如果有录音数据，一并保存
-  if (window._pendingAudio) {
-    entry.audio = window._pendingAudio;
-    window._pendingAudio = null;
-  }
+  const ts = Date.now();
+  const entry = { mood: pendingMood, note, ts };
   moodEntries.unshift(entry);
   pendingMood = null; saveMoods();
   document.getElementById('moodNoteInput').value = '';
   document.getElementById('moodSaveBtn').disabled = true;
+  document.getElementById('moodSaveBtn').classList.remove('has-audio');
   renderMood();
-  const hasAudio = entry.audio ? ' 🎵' : '';
-  showToast(note ? '💬 心情已记录' + hasAudio : '✅ 心情已记录' + hasAudio);
+  // 如果有录音数据，异步存入 IndexedDB 后刷新播放按钮
+  if (window._pendingAudioBlob) {
+    const blob = window._pendingAudioBlob;
+    window._pendingAudioBlob = null;
+    saveAudioToDB(ts, blob).then(() => {
+      // DB 写入完成后刷新按钮
+      const btn = document.querySelector(`.tl-play-btn[data-ts="${ts}"]`);
+      if (btn) btn.classList.remove('hidden');
+    });
+    showToast(note ? '💬 心情已记录 🎵' : '✅ 心情已记录 🎵');
+  } else {
+    showToast(note ? '💬 心情已记录' : '✅ 心情已记录');
+  }
 }
 function cancelMood() {
   pendingMood = null;
@@ -593,33 +602,119 @@ function renderTimeline() {
       : '');
   c.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><h4>${title}</h4>${toggleBtn}</div><div class="timeline-list">${entries.map(e => {
     const t = new Date(e.ts);
-    const dk = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
     const ts = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
     const dateLabel = showAll ? `<span class="tl-date">${t.getMonth()+1}/${t.getDate()}</span>` : '';
-    const playBtn = e.audio ? `<button class="tl-play-btn" onclick="event.stopPropagation();playMoodAudio(${e.ts})" title="播放录音">▶</button>` : '';
-    return `<div class="timeline-item"><span class="tl-time">${ts}</span>${dateLabel}<span class="tl-emoji">${moodMeta[e.mood].emoji}</span><span class="tl-note" title="${esc(e.note||'')}">${esc(e.note||moodMeta[e.mood].label)}</span>${playBtn}<button class="btn-rm" onclick="deleteMoodEntry(${e.ts})" style="font-size:13px;padding:2px">✕</button></div>`;
+    return `<div class="timeline-item"><span class="tl-time">${ts}</span>${dateLabel}<span class="tl-emoji">${moodMeta[e.mood].emoji}</span><span class="tl-note" title="${esc(e.note||'')}">${esc(e.note||moodMeta[e.mood].label)}</span><button class="tl-play-btn hidden" data-ts="${e.ts}" onclick="event.stopPropagation();playMoodAudio(${e.ts})" title="播放录音">▶</button><button class="btn-rm" onclick="deleteMoodEntry(${e.ts})" style="font-size:13px;padding:2px">✕</button></div>`;
   }).join('')}</div>`;
+  // 异步检查并显示播放按钮
+  refreshAudioButtons(entries);
 }
 function toggleMoodHistory() {
   const c = document.getElementById('moodTimeline');
   c.dataset.showAll = c.dataset.showAll === '1' ? '0' : '1';
   renderTimeline();
 }
-function deleteMoodEntry(ts) { moodEntries = moodEntries.filter(e => e.ts !== ts); saveMoods(); renderMood(); showToast('🗑 已删除'); }
+function deleteMoodEntry(ts) { 
+  moodEntries = moodEntries.filter(e => e.ts !== ts); 
+  saveMoods(); 
+  deleteAudioFromDB(ts);
+  renderMood(); 
+  showToast('🗑 已删除'); 
+}
+
+// === IndexedDB 音频存储 ===
+function openAudioDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('yiran-audio-db', 1);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('audio')) {
+        db.createObjectStore('audio', { keyPath: 'ts' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveAudioToDB(ts, blob) {
+  try {
+    const db = await openAudioDB();
+    const tx = db.transaction('audio', 'readwrite');
+    const store = tx.objectStore('audio');
+    store.put({ ts, blob, mime: blob.type });
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch(e) {
+    console.error('Failed to save audio to IndexedDB:', e);
+    showToast('⚠️ 录音保存失败，存储空间不足');
+  }
+}
+
+async function getAudioFromDB(ts) {
+  try {
+    const db = await openAudioDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction('audio', 'readonly');
+      const store = tx.objectStore('audio');
+      const req = store.get(ts);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    });
+  } catch { return null; }
+}
+
+async function deleteAudioFromDB(ts) {
+  try {
+    const db = await openAudioDB();
+    const tx = db.transaction('audio', 'readwrite');
+    tx.objectStore('audio').delete(ts);
+  } catch {}
+}
+
+async function hasAudioInDB(ts) {
+  const entry = await getAudioFromDB(ts);
+  return !!entry;
+}
+
+// 异步刷新时间线中的播放按钮
+function refreshAudioButtons(entries) {
+  if (!entries || entries.length === 0) return;
+  entries.forEach(e => {
+    hasAudioInDB(e.ts).then(has => {
+      if (has) {
+        const btn = document.querySelector(`.tl-play-btn[data-ts="${e.ts}"]`);
+        if (btn) btn.classList.remove('hidden');
+      }
+    });
+  });
+}
 
 // 播放录音
-function playMoodAudio(ts) {
-  const entry = moodEntries.find(e => e.ts === ts);
-  if (!entry || !entry.audio) return;
+async function playMoodAudio(ts) {
   const player = document.getElementById('globalAudioPlayer');
   // 如果正在播同一条，暂停
-  if (player.src && player.dataset.ts === String(ts) && !player.paused) {
+  if (player.dataset.ts === String(ts) && !player.paused) {
     player.pause();
     updatePlayBtn(ts, false);
     return;
   }
-  player.src = entry.audio;
+  
+  const audioEntry = await getAudioFromDB(ts);
+  if (!audioEntry || !audioEntry.blob) {
+    showToast('🔇 录音数据不存在');
+    return;
+  }
+  
+  const url = URL.createObjectURL(audioEntry.blob);
+  // 释放旧 URL
+  if (player.dataset._blobUrl) URL.revokeObjectURL(player.dataset._blobUrl);
+  
+  player.src = url;
   player.dataset.ts = String(ts);
+  player.dataset._blobUrl = url;
   player.onplay = () => updatePlayBtn(ts, true);
   player.onended = () => updatePlayBtn(ts, false);
   player.onpause = () => updatePlayBtn(ts, false);
@@ -1177,19 +1272,13 @@ async function stopListening() {
   btn.classList.remove('listening');
   btn.textContent = '🎤';
   
-  // 停止录音并保存
+  // 停止录音并暂存 Blob
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.onstop = async () => {
+    mediaRecorder.onstop = () => {
       if (audioChunks.length > 0) {
-        const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
-        // 转 base64 存起来
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          window._pendingAudio = reader.result;
-        };
-        reader.readAsDataURL(blob);
+        window._pendingAudioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+        document.getElementById('moodSaveBtn').classList.add('has-audio');
       }
-      // 释放麦克风
       if (audioStream) {
         audioStream.getTracks().forEach(t => t.stop());
         audioStream = null;
